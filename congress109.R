@@ -2,7 +2,7 @@
 # Much of this could have been copied straight from we8there.R or wine.R
 # (that's why you had no starter script this week)
 
-library(textir) # to get the data
+library(textir test) # to get the data
 
 library(maptpx) # for the topics function
 
