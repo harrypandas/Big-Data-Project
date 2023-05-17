@@ -6,6 +6,7 @@ library(textir) # to get the data
 
 library(maptpx) # for the topics function
 
+# this is the data
 data(congress109)
 
 
