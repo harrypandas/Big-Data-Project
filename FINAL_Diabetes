@@ -1,1 +1,0 @@
-DIABbdata <- read.csv("diabetic_data.csv")
