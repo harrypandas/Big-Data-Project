@@ -198,7 +198,7 @@ sum(A1C_balanced_treatment_DT$readmitted_binary==1)
 
 
 ```{}
-Research Question 2: Is higher AIC measurement associated with unfavorable outcomes?
+INFERENCE Q2: Is higher AIC measurement associated with unfavorable outcomes?
 ```
 
 ```{r}
@@ -206,40 +206,6 @@ diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
 ```
 
 
-
-
-```{r}
-fit.1 <- glm(readmitted_binary ~ 
-                race + gender + age + admission_type_id +  discharge_disposition_id + admission_source_id + time_in_hospital +
-payer_code+ medical_specialty+
-num_lab_procedures+     num_procedures+
-num_medications+         number_outpatient+
-number_emergency+         number_inpatient+
-diag_1+                   diag_2+
-diag_3+
-number_diagnoses+
-max_glu_serum+
-A1Cresult+
-metformin+            repaglinide+
-nateglinide+              chlorpropamide+
-glimepiride+              acetohexamide+
-glipizide+                glyburide+
-tolbutamide+              pioglitazone+
-rosiglitazone+            acarbose+
-miglitol+                 tolazamide+
-insulin+                  glyburide-metformin+
-change+                   diabetesMed, data = diab_dt, family = "binomial")
-```
-
-
-
-
-
-
-
-```{r}
-a1_readmit_complete_dt <- na.omit(a1_readmit)
-```
 
 
 
