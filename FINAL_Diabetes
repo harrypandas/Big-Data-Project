@@ -1,1 +1,211 @@
-DIABbdata <- read.csv("diabetic_data.csv")
+---
+title: "final_project"
+author: "Jim Tinley"
+date: "2023-05-17"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(data.table)
+library(tidyverse) 
+library(corrplot)
+library(psych)
+library(writexl)
+library(gamlr)
+library(glmnet)
+library(randomForest)
+library(caret)
+library(smotefamily)
+```
+
+```{r}
+diab_dt <- fread("diabetic_data.csv")
+```
+
+
+
+```{}
+DATA EXPLORATION
+```
+
+```{r}
+str(diab_dt)
+```
+
+```{r}
+# unique_vals <- sapply(diab_dt[,3:50], function(x) unique(x))
+# unique_vals
+
+# Checking unique counts to see # of levels for factor variables
+unique_counts <- sapply(diab_dt, function(x) length(unique(x)))
+unique_counts
+```
+```{r}
+# In particular, drug data has low-level of observations for each factor.
+drug_cols <- diab_dt[,25:47]
+
+# Creating a table that shows counts for each level for drug columns
+drug_levels_dt <- diab_dt[, lapply(.SD, function(x) table(factor(x, levels = c("No", "Up", "Down", "Steady")))), .SDcols = colnames(drug_cols)]
+
+print(drug_levels_dt)
+```
+
+```{r}
+# removing categorical variables with only 1 level OR where there is <50 total observations in the other levels. These will likely only have one factor after removing NAs in other features of interest.
+
+diab_dt <- diab_dt[, -c("acetohexamide", 
+                        "citoglipton",
+                        "examide",
+                        "glipizide-metformin",
+                        "glimepiride-pioglitazone", 
+                        "metformin-pioglitazone",
+                        "metformin-rosiglitazone",
+                        "miglitol",
+                        "tolbutamide",
+                        "tolazamide",
+                        "troglitazone")]
+```
+
+
+```{r}
+# replacing "?"/"None"/"Unknown/Invalid" with NAs
+diab_dt$race <- 
+    ifelse(diab_dt$race == "?", NA, diab_dt$race)
+diab_dt$gender <- 
+    ifelse(diab_dt$gender == "Unknown/Invalid", NA, diab_dt$gender)
+diab_dt$payer_code <- 
+    ifelse(diab_dt$payer_code == "?", NA, diab_dt$payer_code)
+diab_dt$weight <- 
+    ifelse(diab_dt$weight == "?", NA, diab_dt$weight)
+diab_dt$medical_specialty <- 
+    ifelse(diab_dt$medical_specialty == "?", NA, diab_dt$medical_specialty)
+diab_dt$diag_1 <- 
+    ifelse(diab_dt$diag_1 == "?", NA, diab_dt$diag_1)
+diab_dt$diag_2 <- 
+    ifelse(diab_dt$diag_2 == "?", NA, diab_dt$diag_2)
+diab_dt$diag_3 <- 
+    ifelse(diab_dt$diag_3 == "?", NA, diab_dt$diag_3)
+```
+
+```{r}
+# number of NAs
+na_count <- data.table(variable = names(diab_dt), 
+                       count  = colSums(is.na(diab_dt)))
+```
+
+
+```{r}
+# reassigning character variables to factor variables
+char_vars <- sapply(diab_dt, is.character)
+char_cols <- names(diab_dt)[char_vars]
+diab_dt[, (char_cols) := lapply(.SD, as.factor), .SDcols = char_cols]
+```
+
+```{r}
+# replacing Yes/No binaries with 1/0 
+diab_dt$change <- 
+    factor(ifelse(diab_dt$change== "No", 0, 1))
+diab_dt$diabetesMed <- 
+    factor(ifelse(diab_dt$diabetesMed== "No", 0, 1))
+```
+
+```{r}
+# creating binary_readmitted outcome variable
+diab_dt <- 
+    diab_dt[, readmitted_binary := factor(ifelse(readmitted == "NO", 0, 1))]
+```
+
+```{r}
+# Creating binary A1Cresult_measured treatment variable
+diab_dt$A1Cresult_measured <- 
+    factor(ifelse(diab_dt$A1Cresult == "None", 0, 1))
+```
+
+
+```{}
+# INFERENCE Q1: Does AIC Measurement affect readmission?
+```
+
+```{r}
+# removing columns with large number of NAs. While it may be useful to control for weight and medical specialty, it is probably not worth reducing our sample size so dramatically.
+
+A1C_inference1_dt <- diab_dt[, -c("payer_code", "medical_specialty", "weight")] 
+```
+
+```{r}
+# Removing NAs in all other variables
+
+A1C_inference1_dt <- A1C_inference1_dt[complete.cases(A1C_inference1_dt)]
+```
+
+```{r}
+# Assessing imbalance with treatment variable
+plot(A1C_inference1_dt$A1Cresult_measured, main = "Control - Treatment")
+sum(A1C_inference1_dt$A1Cresult_measured == 1)
+```
+
+```{r}
+## ADJUSTING FOR IMBALANCE BETWEEN TREATMENT AND CONTROL
+
+# creating separate data tables for measured and unmeasured A1C
+A1C_unmeasured_dt <- A1C_inference1_dt[A1Cresult_measured==0]
+A1C_measured_dt <- A1C_inference1_dt[A1Cresult_measured==1]
+
+# randomly under sampling majority control group
+set.seed(123)
+A1C_unmeasured_samp <- A1C_unmeasured_dt[sample(nrow(A1C_unmeasured_dt), 16193, replace = FALSE, prob = NULL), ]
+
+
+# combining treated group with randomly under sampled majortity/control
+A1C_balanced_treatment_DT <- rbindlist(list(A1C_unmeasured_samp, A1C_measured_dt),
+                            use.names = TRUE)
+
+sum(A1C_balanced_treatment_DT$A1Cresult_measured==0)
+sum(A1C_balanced_treatment_DT$A1Cresult_measured==1)
+
+# removing intermediate data.tables
+rm(A1C_unmeasured_dt, A1C_measured_dt, A1C_unmeasured_samp)
+```
+
+```{r}
+# Assessing class imbalance with outcome variable
+plot(A1C_balanced_treatment_DT$readmitted_binary, main = "Outcome Classes")
+sum(A1C_balanced_treatment_DT$readmitted_binary==0)
+sum(A1C_balanced_treatment_DT$readmitted_binary==1)
+```
+
+
+
+
+
+
+
+```{r}
+# Using SMOTE KNN approach to up sample minority outcome class
+# Set the number of fraud and legitimate cases, and the desired percentage of legitimate cases
+
+```
+
+
+
+
+
+
+
+
+```{}
+INFERENCE Q2: Is higher AIC measurement associated with unfavorable outcomes?
+```
+
+```{r}
+diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
+```
+
+
+
+
+
