@@ -1,6 +1,6 @@
 ---
 title: "final_project"
-authors: "Craig Heath, Harrison Holt, Asher Margulies, and Jim Tinley"
+author: "Craig Heath, Harrison Holt, Asher Margulies, and Jim Tinley"
 date: "2023-05-17"
 output: pdf_document
 ---
@@ -20,6 +20,7 @@ library(glmnet)
 library(randomForest)
 library(caret)
 library(smotefamily)
+library(mltools)
 ```
 
 ```{r}
@@ -73,10 +74,12 @@ diab_dt <- diab_dt[, -c("acetohexamide",
 
 ```{r}
 # replacing "?"/"None"/"Unknown/Invalid" with NAs
+diab_dt$gender <- 
+    ifelse(diab_dt$gender == "Unknown/Invalid", NA, 
+           ifelse(diab_dt$gender == "Female", 1, 0))
+setnames(diab_dt, "gender", "gender_female")
 diab_dt$race <- 
     ifelse(diab_dt$race == "?", NA, diab_dt$race)
-diab_dt$gender <- 
-    ifelse(diab_dt$gender == "Unknown/Invalid", NA, diab_dt$gender)
 diab_dt$payer_code <- 
     ifelse(diab_dt$payer_code == "?", NA, diab_dt$payer_code)
 diab_dt$weight <- 
@@ -99,13 +102,6 @@ na_count <- data.table(variable = names(diab_dt),
 
 
 ```{r}
-# reassigning character variables to factor variables
-char_vars <- sapply(diab_dt, is.character)
-char_cols <- names(diab_dt)[char_vars]
-diab_dt[, (char_cols) := lapply(.SD, as.factor), .SDcols = char_cols]
-```
-
-```{r}
 # replacing Yes/No binaries with 1/0 
 diab_dt$change <- 
     factor(ifelse(diab_dt$change== "No", 0, 1))
@@ -126,21 +122,81 @@ diab_dt$A1Cresult_measured <-
 ```
 
 
+
 ```{}
 # INFERENCE Q1: Does AIC Measurement affect readmission?
 ```
 
 ```{r}
-# removing columns with large number of NAs. While it may be useful to control for weight and medical specialty, it is probably not worth reducing our sample size so dramatically.
+# removing columns with large number of NAs. While it may be useful to control for weight and medical specialty, it is probably not worth reducing our sample size so dramatically. 
+# Also for this question using binaries for A1Cresult and readmitted so dropping the actual cols
 
-A1C_inference1_dt <- diab_dt[, -c("payer_code", "medical_specialty", "weight")] 
+A1C_inference1_dt <- diab_dt[, -c("payer_code", "medical_specialty", "weight", "diag_1", "diag_2", "diag_3", "A1Cresult", "readmitted")] 
 ```
 
 ```{r}
 # Removing NAs in all other variables
-
 A1C_inference1_dt <- A1C_inference1_dt[complete.cases(A1C_inference1_dt)]
 ```
+
+```{r}
+# IDing cols for dummy variables (this is necessary if we want to SMOTE-NC/KNN)
+A1C_char_columns <- A1C_inference1_dt[, c(Filter(is.character, .SD),
+                                          .("encounter_id" = encounter_id))]
+
+# Converting character cols to factor type (needed for one_hot formula)
+char_vars <- sapply(A1C_char_columns, is.character)
+char_cols <- names(A1C_char_columns)[char_vars]
+A1C_char_columns[, (char_cols) := lapply(.SD, as.factor), .SDcols = char_cols]
+
+# One-hot for dummy variables (NOTE: this creates R not R-1 dummies)
+A1C_char_columns <- one_hot(A1C_char_columns)
+```
+
+```{r}
+# Intuitively removing variables to create R-1 dummies/set baseline vars
+# this is important for our interpretation of model effects
+A1C_char_columns <- A1C_char_columns[, -c("race_Caucasian",
+                                          "age_[0-10)",
+                                          "max_glu_serum_None",
+                                          "metformin_No",
+                                          "repaglinide_No",
+                                          "nateglinide_No",
+                                          "chlorpropamide_No",
+                                          "glimepiride_No",
+                                          "glipizide_No",
+                                          "glyburide_No",
+                                          "pioglitazone_No",
+                                          "rosiglitazone_No",
+                                          "acarbose_No",
+                                          "insulin_No",
+                                          "glyburide-metformin_No")]
+```
+
+```{r}
+setkey(A1C_char_columns, encounter_id)
+setkey(A1C_inference1_dt, encounter_id)
+
+A1C_inference1_dt <- merge(A1C_inference1_dt[,-c("race",
+                                          "age",
+                                          "max_glu_serum",
+                                          "metformin",
+                                          "repaglinide",
+                                          "nateglinide",
+                                          "chlorpropamide",
+                                          "glimepiride",
+                                          "glipizide",
+                                          "glyburide",
+                                          "pioglitazone",
+                                          "rosiglitazone",
+                                          "acarbose",
+                                          "insulin",
+                                          "glyburide-metformin")],
+                           A1C_char_columns, all.x = TRUE)
+
+
+```
+
 
 ```{r}
 # Assessing imbalance with treatment variable
@@ -149,7 +205,7 @@ sum(A1C_inference1_dt$A1Cresult_measured == 1)
 ```
 
 ```{r}
-## ADJUSTING FOR IMBALANCE BETWEEN TREATMENT AND CONTROL
+## ADJUSTING FOR IMBALANCE BETWEEN TREATMENT/CONTROL: RANDOM UNDER SAMPLING
 
 # creating separate data tables for measured and unmeasured A1C
 A1C_unmeasured_dt <- A1C_inference1_dt[A1Cresult_measured==0]
@@ -157,7 +213,7 @@ A1C_measured_dt <- A1C_inference1_dt[A1Cresult_measured==1]
 
 # randomly under sampling majority control group
 set.seed(123)
-A1C_unmeasured_samp <- A1C_unmeasured_dt[sample(nrow(A1C_unmeasured_dt), 16193, replace = FALSE, prob = NULL), ]
+A1C_unmeasured_samp <- A1C_unmeasured_dt[sample(nrow(A1C_unmeasured_dt), nrow(A1C_measured_dt), replace = FALSE, prob = NULL), ]
 
 
 # combining treated group with randomly under sampled majortity/control
@@ -178,16 +234,34 @@ sum(A1C_balanced_treatment_DT$readmitted_binary==0)
 sum(A1C_balanced_treatment_DT$readmitted_binary==1)
 ```
 
+```{r}
+# UPSAMPLING MINORITY CLASS READMITTED = 1
+
+# creating separate data tables for measured and unmeasured A1C
+A1C_nonreadmitted_dt <- A1C_balanced_treatment_DT[readmitted_binary==0]
+A1C_readmitted_dt <- A1C_balanced_treatment_DT[readmitted_binary==1]
+
+# randomly under sampling majority control group
+set.seed(321)
+A1C_readmitted_samp <- A1C_readmitted_dt[sample(nrow(A1C_nonreadmitted_dt) - nrow(A1C_readmitted_dt), replace = FALSE, prob = NULL), ]
 
 
+# combining treated group with randomly under sampled majortity/control
+A1C_Analyis_DT <- rbindlist(list(A1C_readmitted_samp, A1C_balanced_treatment_DT),
+                            use.names = TRUE)
 
+sum(A1C_Analyis_DT$readmitted_binary==0)
+sum(A1C_Analyis_DT$readmitted_binary==1)
 
+# removing intermediate data.tables
+rm(A1C_nonreadmitted_dt, A1C_readmitted_dt, A1C_readmitted_samp)
+```
 
 
 ```{r}
-# Using SMOTE KNN approach to up sample minority outcome class
-# Set the number of fraud and legitimate cases, and the desired percentage of legitimate cases
-
+fit.1 <- glm(readmitted_binary ~ . - patient_nbr - encounter_id, 
+             data = A1C_balanced_treatment_DT, family = "binomial")
+summary(fit.1)
 ```
 
 
@@ -198,7 +272,7 @@ sum(A1C_balanced_treatment_DT$readmitted_binary==1)
 
 
 ```{}
-INFERENCE Q2: Is higher AIC measurement associated with unfavorable outcomes?
+Research Question 2: Is higher AIC measurement associated with unfavorable outcomes?
 ```
 
 ```{r}
@@ -206,6 +280,17 @@ diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
 ```
 
 
+
+
+
+
+
+
+
+
+```{r}
+a1_readmit_complete_dt <- na.omit(a1_readmit)
+```
 
 
 
