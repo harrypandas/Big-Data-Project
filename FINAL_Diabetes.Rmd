@@ -31,8 +31,10 @@ ids_lookup_dt <- fread("IDs_mapping.csv")
 
 
 
+
 ```{r}
 # DATA EXPLORATION
+
 ```
 
 ```{r}
@@ -56,7 +58,6 @@ drug_levels_dt <- diab_dt[, lapply(.SD, function(x) table(factor(x, levels = c("
 
 print(drug_levels_dt)
 ```
-
 
 
 ```{r}
@@ -85,7 +86,6 @@ admission_source_ids_lookup_dt <- admission_source_ids_lookup_dt[-1]
 # removing old table
 rm(ids_lookup_dt)
 ```
-
 
 ```{r}
 # Joining ID lookup values with main feature dataset
@@ -130,6 +130,7 @@ diab_dt[, unfavorable_outcome :=
                       discharge_type == "Expired - at home. Medicaid only, hospice."), 1, 0)]
 ```
 
+
 ```{r}
 # removing categorical variables with only 1 level OR where there is <50 total observations in the other levels. These will likely only have one factor after removing NAs in other features of interest.
 
@@ -172,6 +173,7 @@ diab_dt$admission_source <-
     ifelse(diab_dt$admission_source == "NULL", NA, diab_dt$admission_source)
 diab_dt$discharge_type <- 
     ifelse(diab_dt$discharge_type == "NULL", NA, diab_dt$discharge_type)
+
 ```
 
 ```{r}
@@ -222,6 +224,7 @@ A1C_inference1_dt <- diab_dt[, -c("payer_code",
                                   "discharge_type",
                                   "admission_source",
                                   "admission_type")] 
+
 ```
 
 ```{r}
@@ -347,6 +350,7 @@ rm(A1C_nonreadmitted_dt, A1C_readmitted_dt, A1C_readmitted_samp)
 
 
 ```{r}
+
 fit.1 <- glm(unfavorable_outcome ~ . - patient_nbr - encounter_id, 
              data = A1C_balanced_treatment_DT, family = "binomial")
 ```
@@ -375,9 +379,14 @@ rm(variables_fit.1, coefficients_fit.1)
 
 
 
+
 ```{r}
 # Research Question 2: Is higher AIC measurement associated with unfavorable outcomes?
+
+```{r}
+diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
 ```
+
 
 
 
@@ -430,7 +439,4 @@ diab_dt$discharge_type <-
 
 print(unique(diab_dt$discharge_type))
 ```
-
-
-
 
