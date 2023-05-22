@@ -13,6 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(data.table)
 library(tidyverse) 
 library(corrplot)
+library(kableExtra)
 library(psych)
 library(writexl)
 library(gamlr)
@@ -25,12 +26,13 @@ library(mltools)
 
 ```{r}
 diab_dt <- fread("diabetic_data.csv")
+ids_lookup_dt <- fread("IDs_mapping.csv")
 ```
 
 
 
-```{}
-DATA EXPLORATION
+```{r}
+# DATA EXPLORATION
 ```
 
 ```{r}
@@ -55,6 +57,79 @@ drug_levels_dt <- diab_dt[, lapply(.SD, function(x) table(factor(x, levels = c("
 print(drug_levels_dt)
 ```
 
+
+
+```{r}
+# DATA WRANGLING
+```
+
+```{r}
+# restructuring ids lookup tables as 3 separate tables
+admission_ids_lookup_dt <- ids_lookup_dt[1:8]
+setnames(admission_ids_lookup_dt, 
+         names(admission_ids_lookup_dt), 
+         c("admission_type_id","admission_type"))
+
+discharge_ids_lookup_dt <- ids_lookup_dt[10:40]
+setnames(discharge_ids_lookup_dt, 
+         names(discharge_ids_lookup_dt), 
+         c("discharge_disposition_id","discharge_type"))
+discharge_ids_lookup_dt <- discharge_ids_lookup_dt[-1]
+
+admission_source_ids_lookup_dt <- ids_lookup_dt[42:67]
+setnames(admission_source_ids_lookup_dt, 
+         names(admission_source_ids_lookup_dt), 
+         c("admission_source_id","admission_source"))
+admission_source_ids_lookup_dt <- admission_source_ids_lookup_dt[-1]
+
+# removing old table
+rm(ids_lookup_dt)
+```
+
+
+```{r}
+# Joining ID lookup values with main feature dataset
+
+setkey(diab_dt, admission_type_id)
+setkey(admission_ids_lookup_dt, admission_type_id)
+admission_ids_lookup_dt$admission_type_id <-
+  as.integer(admission_ids_lookup_dt$admission_type_id)
+
+diab_dt <- merge(diab_dt, admission_ids_lookup_dt, all.x = TRUE)
+
+setkey(diab_dt, discharge_disposition_id)
+setkey(discharge_ids_lookup_dt, discharge_disposition_id)
+discharge_ids_lookup_dt$discharge_disposition_id <-
+  as.integer(discharge_ids_lookup_dt$discharge_disposition_id)
+
+diab_dt <- merge(diab_dt, discharge_ids_lookup_dt, all.x = TRUE)
+
+setkey(diab_dt, admission_source_id)
+setkey(admission_source_ids_lookup_dt, admission_source_id)
+admission_source_ids_lookup_dt$admission_source_id <-
+  as.integer(admission_source_ids_lookup_dt$admission_source_id)
+
+diab_dt <- merge(diab_dt, admission_source_ids_lookup_dt, all.x = TRUE)
+
+
+# resetting key in main feature data table back to encounter id
+setkey(diab_dt, encounter_id)
+
+
+# dropping 3 numeric id columns
+diab_dt <- diab_dt[, -c("admission_type_id", "admission_source_id", "discharge_disposition_id")]
+```
+
+```{r}
+# creating Unfavorable_Outcome variable - Expired/Hospice
+diab_dt[, unfavorable_outcome := 
+          ifelse((discharge_type == "Expired" | 
+                   discharge_type == "Hospice / home" |
+                    discharge_type == "Hospice / medical facility" | 
+                     discharge_type == "Expired in a medical facility. Medicaid only, hospice." | 
+                      discharge_type == "Expired - at home. Medicaid only, hospice."), 1, 0)]
+```
+
 ```{r}
 # removing categorical variables with only 1 level OR where there is <50 total observations in the other levels. These will likely only have one factor after removing NAs in other features of interest.
 
@@ -70,7 +145,6 @@ diab_dt <- diab_dt[, -c("acetohexamide",
                         "tolazamide",
                         "troglitazone")]
 ```
-
 
 ```{r}
 # replacing "?"/"None"/"Unknown/Invalid" with NAs
@@ -92,6 +166,12 @@ diab_dt$diag_2 <-
     ifelse(diab_dt$diag_2 == "?", NA, diab_dt$diag_2)
 diab_dt$diag_3 <- 
     ifelse(diab_dt$diag_3 == "?", NA, diab_dt$diag_3)
+diab_dt$admission_type <- 
+    ifelse(diab_dt$admission_type == "NULL", NA, diab_dt$admission_type)
+diab_dt$admission_source <- 
+    ifelse(diab_dt$admission_source == "NULL", NA, diab_dt$admission_source)
+diab_dt$discharge_type <- 
+    ifelse(diab_dt$discharge_type == "NULL", NA, diab_dt$discharge_type)
 ```
 
 ```{r}
@@ -99,7 +179,6 @@ diab_dt$diag_3 <-
 na_count <- data.table(variable = names(diab_dt), 
                        count  = colSums(is.na(diab_dt)))
 ```
-
 
 ```{r}
 # replacing Yes/No binaries with 1/0 
@@ -123,7 +202,8 @@ diab_dt$A1Cresult_measured <-
 
 
 
-```{}
+
+```{r}
 # INFERENCE Q1: Does AIC Measurement affect readmission?
 ```
 
@@ -131,7 +211,17 @@ diab_dt$A1Cresult_measured <-
 # removing columns with large number of NAs. While it may be useful to control for weight and medical specialty, it is probably not worth reducing our sample size so dramatically. 
 # Also for this question using binaries for A1Cresult and readmitted so dropping the actual cols
 
-A1C_inference1_dt <- diab_dt[, -c("payer_code", "medical_specialty", "weight", "diag_1", "diag_2", "diag_3", "A1Cresult", "readmitted")] 
+A1C_inference1_dt <- diab_dt[, -c("payer_code", 
+                                  "medical_specialty", 
+                                  "weight", 
+                                  "diag_1", 
+                                  "diag_2", 
+                                  "diag_3", 
+                                  "A1Cresult", 
+                                  "readmitted",
+                                  "discharge_type",
+                                  "admission_source",
+                                  "admission_type")] 
 ```
 
 ```{r}
@@ -193,8 +283,6 @@ A1C_inference1_dt <- merge(A1C_inference1_dt[,-c("race",
                                           "insulin",
                                           "glyburide-metformin")],
                            A1C_char_columns, all.x = TRUE)
-
-
 ```
 
 
@@ -259,28 +347,27 @@ rm(A1C_nonreadmitted_dt, A1C_readmitted_dt, A1C_readmitted_samp)
 
 
 ```{r}
-fit.1 <- glm(readmitted_binary ~ . - patient_nbr - encounter_id, 
+fit.1 <- glm(unfavorable_outcome ~ . - patient_nbr - encounter_id, 
              data = A1C_balanced_treatment_DT, family = "binomial")
-summary(fit.1)
-```
-
-
-
-
-
-
-
-
-```{}
-Research Question 2: Is higher AIC measurement associated with unfavorable outcomes?
 ```
 
 ```{r}
-diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
+summary_fit.1 <- summary(fit.1)
+variables_fit.1 <- as.data.table(rownames(summary_fit.1$coefficients))
+coefficients_fit.1 <- as.data.table(summary_fit.1$coefficients)
+coefficients_fit.1 <- coefficients_fit.1[, Sig := ifelse(`Pr(>|z|)` < 0.001, "***", 
+                                                         ifelse(`Pr(>|z|)` < 0.01, "**",
+                                                                ifelse(`Pr(>|z|)` < 0.05, "*", "")))]
+abbreviated_covariates_fit.1 <- str_trunc(variables_fit.1, 150) 
+summary_fit.1_dt <- cbind(variables_fit.1, coefficients_fit.1)
 ```
 
-
-
+```{r}
+kable(summary_fit.1_dt, digits = 4) %>% 
+  kable_styling(font_size = 7, latex_options = "striped") %>% 
+    add_header_above(c("Logistic Regression" = 6))
+rm(variables_fit.1, coefficients_fit.1)
+```
 
 
 
@@ -289,8 +376,61 @@ diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
 
 
 ```{r}
-a1_readmit_complete_dt <- na.omit(a1_readmit)
+# Research Question 2: Is higher AIC measurement associated with unfavorable outcomes?
 ```
+
+
+
+
+
+
+```{r}
+# ADDITIONAL CODE
+```
+
+```{r}
+# Abbreviating expressions in discharge disposition for cleaner regression output (if var is included)
+diab_dt$discharge_type <- 
+    ifelse(diab_dt$discharge_type == "Discharged to home",
+           "Discharged - home",
+    ifelse(diab_dt$discharge_type == "Discharged/transferred to SNF",
+           "Discharged - SNF",
+    ifelse(diab_dt$discharge_type == "Discharged/transferred to home with home health service", 
+           "Discharged - home with home health service",
+    ifelse(diab_dt$discharge_type == "Discharged/transferred to another short term hospital", 
+           "Discharged - short term hospital",
+    ifelse(diab_dt$discharge_type == "Discharged/transferred to another type of inpatient care institution", 
+           "Discharged - another institution for inpatient care",
+    ifelse(diab_dt$discharge_type == "Discharged/transferred to ICF",
+           "Discharged - ICF",
+    ifelse(diab_dt$discharge_type == "Hospice / medical facility",
+           "Hospice - medical facility",
+    ifelse(diab_dt$discharge_type == "Discharged/transferred to home under care of Home IV provider", 
+           "Discharged - home under care of Home IV provider",
+    ifelse(diab_dt$discharge_type == "Hospice / home",  
+           "Hospice - home",
+    ifelse(diab_dt$discharge_type == "Discharged/transferred/referred another institution for outpatient services",
+           "Discharged - another institution for outpatient services",   
+    ifelse(diab_dt$discharge_type == "Discharged/transferred to another rehab fac including rehab units of a hospital .",
+           "Discharged - rehab facility",
+    ifelse(diab_dt$discharge_type == "Discharged/transferred to a long term care hospital.", 
+           "Discharged - long term care hospital",                                       
+    ifelse(diab_dt$discharge_type == "Expired in a medical facility. Medicaid only, hospice.", 
+           "Expired - at medical facility. Medicaid only, hospice.",                 
+    ifelse(diab_dt$discharge_type == "Discharged/transferred within this institution to Medicare approved swing bed", 
+           "Discharged - within this institution to Medicare approved swing bed",
+           ifelse(diab_dt$discharge_type == "Discharged/transferred to a nursing facility certified under Medicaid but not certified under Medicare.", 
+                  "Discharged - nursing facility certified under Medicaid but not Medicare.",
+         ifelse(diab_dt$discharge_type == "Discharged/transferred/referred to a psychiatric hospital of psychiatric distinct part unit of a hospital", 
+                "Discharged -  psychiatric hospital or unit",
+          ifelse(diab_dt$discharge_type == "Expired at home. Medicaid only, hospice.", 
+                 "Expired - at home. Medicaid only, hospice.",
+          ifelse(diab_dt$discharge_type == "Discharged/transferred to a federal health care facility.", 
+                 "Discharged - to a federal health care facility.", diab_dt$discharge_type))))))))))))))))))
+
+print(unique(diab_dt$discharge_type))
+```
+
 
 
 
