@@ -382,6 +382,7 @@ rm(variables_fit.1, coefficients_fit.1)
 
 ```{r}
 # Research Question 2: Is higher AIC measurement associated with unfavorable outcomes?
+```
 
 ```{r}
 diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
