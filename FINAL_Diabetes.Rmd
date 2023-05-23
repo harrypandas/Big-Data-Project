@@ -201,7 +201,7 @@ diab_dt <-
 diab_dt$A1Cresult_measured <- 
     factor(ifelse(diab_dt$A1Cresult == "None", 0, 1))
 ```
-``{r}
+```{r}
 
 # Create mapping for admission_type_id categorical values
 
