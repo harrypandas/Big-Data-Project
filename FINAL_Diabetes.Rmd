@@ -58,7 +58,130 @@ drug_levels_dt <- diab_dt[, lapply(.SD,
                           .SDcols = colnames(drug_cols)]
 ```
 
+*Create mapping for admission_type_id categorical values*
+```{r}
+admission_type_id_map <- c('1'='Urgent',
+                           '2'='Urgent',
+                           '3'='Non-Urgent',
+                           '4'='Non-Urgent',
+                           '5'=NA,
+                           '6'=NA,
+                           '7'='Urgent',
+                           '8'=NA)
 
+diab_dt$admission_type_id_char <- admission_type_id_map[as.character(diab_dt$admission_type_id)]
+
+
+admission_type_id_count <- table(diab_dt$admission_type_id_char)
+
+admission_type_id_count <- admission_type_id_count[order(admission_type_id_count, decreasing = TRUE)]
+
+barplot(admission_type_id_count, xlab="admission_type_id", ylab="Count", 
+     main = "Distribution of Admission Type IDs", width=0.5, space=0.5, col="lightblue")
+
+```
+
+
+*Create mappings for discharge_disposition_id*
+```{r}
+discharge_disposition_id_map <- c("1"="Discharge Home",
+                                  "2"="Discharge Hospital Facility",
+                                  "3"="Discharge Hospital Facility",
+                                  "4"="Discharge Hospital Facility",
+                                  "5"="Discharge Hospital Facility",
+                                  "6"="Discharge Home",
+                                  "7"="Discharge Hospital Facility",
+                                  "8"="Discharge Home",
+                                  "9"="Discharge Hospital Facility",
+                                  "10"="Discharge Hospital Facility",
+                                  "11"="Expired",
+                                  "12"="Discharge Hospital Facility",
+                                  "13"="Discharge Home",
+                                  "14"="Discharge Hospital Facility",
+                                  "15"="Discharge Hospital Facility",
+                                  "16"="Discharge Hospital Facility",
+                                  "17"="Discharge Hospital Facility",
+                                  "18"=NA,
+                                  "19"="Expired",
+                                  "20"="Expired",
+                                  "21"="Expired",
+                                  "22"="Discharge Hospital Facility",
+                                  "23"="Discharge Hospital Facility",
+                                  "24"="Discharge Hospital Facility",
+                                  "25"=NA,
+                                  "26"=NA,
+                                  "27"="Discharge Hospital Facility",
+                                  "28"="Discharge Hospital Facility",
+                                  "29"="Discharge Hospital Facility",
+                                  "30"="Discharge Hospital Facility")
+
+diab_dt$discharge_disposition_id_char <- discharge_disposition_id_map[as.character(diab_dt$discharge_disposition_id)]
+
+discharge_disposition_id_count <- table(diab_dt$discharge_disposition_id_char)
+
+discharge_disposition_id_count <- discharge_disposition_id_count[order(discharge_disposition_id_count, decreasing=TRUE)]
+
+barplot(discharge_disposition_id_count, xlab="discharge_disposition_id", ylab="Count", 
+     main = "Distribution of Discharge", width=0.5, space=0.5, col="lightblue")
+```
+
+*Create mappings for admission_source_id*
+```{r}
+admission_source_id_map <- c("1"="Non-Emergency",
+                                  "2"="Non-Emergency",
+                                  "3"="Non-Emergency",
+                                  "4"="Non-Emergency",
+                                  "5"="Non-Emergency",
+                                  "6"="Non-Emergency",
+                                  "7"="Emergency",
+                                  "8"="Non-Emergency",
+                                  "9"=NA,
+                                  "10"="Non-Emergency",
+                                  "11"="Non-Emergency",
+                                  "12"="Non-Emergency",
+                                  "13"="Non-Emergency",
+                                  "14"="Non-Emergency",
+                                  "15"="Non-Emergency",
+                                  "17"=NA,
+                                  "18"=NA,
+                                  "19"="Non-Emergency",
+                                  "20"=NA,
+                                  "21"=NA,
+                                  "22"="Non-Emergency",
+                                  "23"="Non-Emergency",
+                                  "24"="Non-Emergency",
+                                  "25"="Non-Emergency",
+                                  "26"="Non-Emergency")
+
+diab_dt$admission_source_id_char <- admission_source_id_map[as.character(diab_dt$admission_source_id)]
+
+admission_source_id_count <- table(diab_dt$admission_source_id_char)
+
+admission_source_id_count <- admission_source_id_count[order(admission_source_id_count, decreasing=TRUE)]
+
+barplot(admission_source_id_count, xlab="admission_source_id", ylab="Count", 
+     main = "Distribution of Admission Source", width=0.5, space=0.5, col="lightblue")
+```
+
+```{r}
+age_map <- c("[0-10)"=5,
+             "[10-20)" = 15,
+             "[20-30)" = 25,
+             "[30-40)" = 35,
+             "[40-50)" = 45,
+             "[50-60)" = 55,
+             "[60-70)" = 65,
+             "[70-80)" = 75,
+             "[80-90)" = 85,
+             "[90-100)" = 95)
+
+diab_dt$age_mean <- age_map[as.character(diab_dt$age)]
+
+age_count <- table(factor(diab_dt$age_mean))
+
+barplot(age_count, xlab="age", ylab="Count", 
+     main = "Distribution of Age Groups", width=0.5, space=0.5, col="lightblue")
+```
 
 
 # Data Wrangling
@@ -229,131 +352,6 @@ diab_dt <-
 ```{r}
 diab_dt$A1Cresult_measured <- 
     ifelse(diab_dt$A1Cresult == "None", FALSE, TRUE)
-```
-
-*Create mapping for admission_type_id categorical values*
-```{r}
-admission_type_id_map <- c('1'='Urgent',
-                           '2'='Urgent',
-                           '3'='Non-Urgent',
-                           '4'='Non-Urgent',
-                           '5'=NA,
-                           '6'=NA,
-                           '7'='Urgent',
-                           '8'=NA)
-
-diab_dt$admission_type_id_char <- admission_type_id_map[as.character(diab_dt$admission_type_id)]
-
-
-admission_type_id_count <- table(diab_dt$admission_type_id_char)
-
-admission_type_id_count <- admission_type_id_count[order(admission_type_id_count, decreasing = TRUE)]
-
-barplot(admission_type_id_count, xlab="admission_type_id", ylab="Count", 
-     main = "Distribution of Admission Type IDs", width=0.5, space=0.5, col="lightblue")
-
-```
-
-
-*Create mappings for discharge_disposition_id*
-```{r}
-discharge_disposition_id_map <- c("1"="Discharge Home",
-                                  "2"="Discharge Hospital Facility",
-                                  "3"="Discharge Hospital Facility",
-                                  "4"="Discharge Hospital Facility",
-                                  "5"="Discharge Hospital Facility",
-                                  "6"="Discharge Home",
-                                  "7"="Discharge Hospital Facility",
-                                  "8"="Discharge Home",
-                                  "9"="Discharge Hospital Facility",
-                                  "10"="Discharge Hospital Facility",
-                                  "11"="Expired",
-                                  "12"="Discharge Hospital Facility",
-                                  "13"="Discharge Home",
-                                  "14"="Discharge Hospital Facility",
-                                  "15"="Discharge Hospital Facility",
-                                  "16"="Discharge Hospital Facility",
-                                  "17"="Discharge Hospital Facility",
-                                  "18"=NA,
-                                  "19"="Expired",
-                                  "20"="Expired",
-                                  "21"="Expired",
-                                  "22"="Discharge Hospital Facility",
-                                  "23"="Discharge Hospital Facility",
-                                  "24"="Discharge Hospital Facility",
-                                  "25"=NA,
-                                  "26"=NA,
-                                  "27"="Discharge Hospital Facility",
-                                  "28"="Discharge Hospital Facility",
-                                  "29"="Discharge Hospital Facility",
-                                  "30"="Discharge Hospital Facility")
-
-diab_dt$discharge_disposition_id_char <- discharge_disposition_id_map[as.character(diab_dt$discharge_disposition_id)]
-
-discharge_disposition_id_count <- table(diab_dt$discharge_disposition_id_char)
-
-discharge_disposition_id_count <- discharge_disposition_id_count[order(discharge_disposition_id_count, decreasing=TRUE)]
-
-barplot(discharge_disposition_id_count, xlab="discharge_disposition_id", ylab="Count", 
-     main = "Distribution of Discharge", width=0.5, space=0.5, col="lightblue")
-```
-
-*Create mappings for admission_source_id*
-```{r}
-admission_source_id_map <- c("1"="Non-Emergency",
-                                  "2"="Non-Emergency",
-                                  "3"="Non-Emergency",
-                                  "4"="Non-Emergency",
-                                  "5"="Non-Emergency",
-                                  "6"="Non-Emergency",
-                                  "7"="Emergency",
-                                  "8"="Non-Emergency",
-                                  "9"=NA,
-                                  "10"="Non-Emergency",
-                                  "11"="Non-Emergency",
-                                  "12"="Non-Emergency",
-                                  "13"="Non-Emergency",
-                                  "14"="Non-Emergency",
-                                  "15"="Non-Emergency",
-                                  "17"=NA,
-                                  "18"=NA,
-                                  "19"="Non-Emergency",
-                                  "20"=NA,
-                                  "21"=NA,
-                                  "22"="Non-Emergency",
-                                  "23"="Non-Emergency",
-                                  "24"="Non-Emergency",
-                                  "25"="Non-Emergency",
-                                  "26"="Non-Emergency")
-
-diab_dt$admission_source_id_char <- admission_source_id_map[as.character(diab_dt$admission_source_id)]
-
-admission_source_id_count <- table(diab_dt$admission_source_id_char)
-
-admission_source_id_count <- admission_source_id_count[order(admission_source_id_count, decreasing=TRUE)]
-
-barplot(admission_source_id_count, xlab="admission_source_id", ylab="Count", 
-     main = "Distribution of Admission Source", width=0.5, space=0.5, col="lightblue")
-```
-
-```{r}
-age_map <- c("[0-10)"=5,
-             "[10-20)" = 15,
-             "[20-30)" = 25,
-             "[30-40)" = 35,
-             "[40-50)" = 45,
-             "[50-60)" = 55,
-             "[60-70)" = 65,
-             "[70-80)" = 75,
-             "[80-90)" = 85,
-             "[90-100)" = 95)
-
-diab_dt$age_mean <- age_map[as.character(diab_dt$age)]
-
-age_count <- table(factor(diab_dt$age_mean))
-
-barplot(age_count, xlab="age", ylab="Count", 
-     main = "Distribution of Age Groups", width=0.5, space=0.5, col="lightblue")
 ```
 
 
