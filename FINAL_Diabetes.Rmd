@@ -1,18 +1,22 @@
 ---
-title: "final_project"
+title: '41201_Final_Project: Diabetes Analysis'
 author: "Craig Heath, Harrison Holt, Asher Margulies, and Jim Tinley"
 date: "2023-05-17"
-output: pdf_document
+output:
+  pdf_document: default
+  word_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r, include=FALSE}
 library(data.table)
 library(tidyverse) 
 library(corrplot)
+library(rbounds)
+library(Matching)
 library(kableExtra)
 library(psych)
 library(writexl)
@@ -31,41 +35,60 @@ ids_lookup_dt <- fread("IDs_mapping.csv")
 
 
 
+# Data Exploration
 
 ```{r}
-# DATA EXPLORATION
-
+# str(diab_dt)
 ```
 
+*Checking unique counts to see # of levels for factor variables*
 ```{r}
-str(diab_dt)
+unique_counts <- as.data.table(cbind(colnames(diab_dt), 
+                                     sapply(diab_dt, function(x)
+                                       length(unique(x)))))
 ```
 
+*Drug data has low-level of observations for each factor. Creating a table that shows counts for each level for drug columns.*
 ```{r}
-# unique_vals <- sapply(diab_dt[,3:50], function(x) unique(x))
-# unique_vals
-
-# Checking unique counts to see # of levels for factor variables
-unique_counts <- sapply(diab_dt, function(x) length(unique(x)))
-unique_counts
-```
-```{r}
-# In particular, drug data has low-level of observations for each factor.
 drug_cols <- diab_dt[,25:47]
 
-# Creating a table that shows counts for each level for drug columns
-drug_levels_dt <- diab_dt[, lapply(.SD, function(x) table(factor(x, levels = c("No", "Up", "Down", "Steady")))), .SDcols = colnames(drug_cols)]
-
-print(drug_levels_dt)
+drug_levels_dt <- diab_dt[, lapply(.SD, 
+                                    function(x) 
+                                      table(factor(x, levels= c("No","Up","Down","Steady")))), 
+                          .SDcols = colnames(drug_cols)]
 ```
 
 
+
+
+# Data Wrangling
+## Filtering data/Removing features
+
+*Ordering by encounter ID oldest to newest. Only using first encounter for each patient - otherwise violating independence assumption of models*
 ```{r}
-# DATA WRANGLING
+diab_dt <- diab_dt[order(encounter_id)]
+diab_dt <- diab_dt[!duplicated(patient_nbr)]
 ```
 
+
+*Removing categorical variables with only 1 level OR where there is <50 total observations in the other levels. These will likely only have one factor after removing NAs in other features of interest.*
 ```{r}
-# restructuring ids lookup tables as 3 separate tables
+diab_dt <- diab_dt[, -c("acetohexamide", 
+                        "citoglipton",
+                        "examide",
+                        "glipizide-metformin",
+                        "glimepiride-pioglitazone", 
+                        "metformin-pioglitazone",
+                        "metformin-rosiglitazone",
+                        "miglitol",
+                        "tolbutamide",
+                        "tolazamide",
+                        "troglitazone")]
+```
+
+## Joins
+*Restructuring ids lookup table as 3 separate tables*
+```{r}
 admission_ids_lookup_dt <- ids_lookup_dt[1:8]
 setnames(admission_ids_lookup_dt, 
          names(admission_ids_lookup_dt), 
@@ -82,13 +105,10 @@ setnames(admission_source_ids_lookup_dt,
          names(admission_source_ids_lookup_dt), 
          c("admission_source_id","admission_source"))
 admission_source_ids_lookup_dt <- admission_source_ids_lookup_dt[-1]
-
-# removing old table
-rm(ids_lookup_dt)
 ```
 
+*Joining admission type descriptions*
 ```{r}
-# Joining ID lookup values with main feature dataset
 
 setkey(diab_dt, admission_type_id)
 setkey(admission_ids_lookup_dt, admission_type_id)
@@ -96,6 +116,10 @@ admission_ids_lookup_dt$admission_type_id <-
   as.integer(admission_ids_lookup_dt$admission_type_id)
 
 diab_dt <- merge(diab_dt, admission_ids_lookup_dt, all.x = TRUE)
+```
+
+*Joining discharge disposition descriptions*
+```{r}
 
 setkey(diab_dt, discharge_disposition_id)
 setkey(discharge_ids_lookup_dt, discharge_disposition_id)
@@ -103,6 +127,10 @@ discharge_ids_lookup_dt$discharge_disposition_id <-
   as.integer(discharge_ids_lookup_dt$discharge_disposition_id)
 
 diab_dt <- merge(diab_dt, discharge_ids_lookup_dt, all.x = TRUE)
+```
+
+*Joining admisson source descriptions*
+```{r}
 
 setkey(diab_dt, admission_source_id)
 setkey(admission_source_ids_lookup_dt, admission_source_id)
@@ -110,45 +138,27 @@ admission_source_ids_lookup_dt$admission_source_id <-
   as.integer(admission_source_ids_lookup_dt$admission_source_id)
 
 diab_dt <- merge(diab_dt, admission_source_ids_lookup_dt, all.x = TRUE)
+```
 
-
-# resetting key in main feature data table back to encounter id
-setkey(diab_dt, encounter_id)
-
-
-# dropping 3 numeric id columns
+*Dropping 3 integer id columns*
+```{r}
 diab_dt <- diab_dt[, -c("admission_type_id", "admission_source_id", "discharge_disposition_id")]
 ```
 
+*Removing Intermediate tables from global environment*
 ```{r}
-# creating Unfavorable_Outcome variable - Expired/Hospice
-diab_dt[, unfavorable_outcome := 
-          ifelse((discharge_type == "Expired" | 
-                   discharge_type == "Hospice / home" |
-                    discharge_type == "Hospice / medical facility" | 
-                     discharge_type == "Expired in a medical facility. Medicaid only, hospice." | 
-                      discharge_type == "Expired - at home. Medicaid only, hospice."), 1, 0)]
+rm(admission_source_ids_lookup_dt, admission_ids_lookup_dt, discharge_ids_lookup_dt, ids_lookup_dt)
 ```
 
-
+*Resetting key*
 ```{r}
-# removing categorical variables with only 1 level OR where there is <50 total observations in the other levels. These will likely only have one factor after removing NAs in other features of interest.
-
-diab_dt <- diab_dt[, -c("acetohexamide", 
-                        "citoglipton",
-                        "examide",
-                        "glipizide-metformin",
-                        "glimepiride-pioglitazone", 
-                        "metformin-pioglitazone",
-                        "metformin-rosiglitazone",
-                        "miglitol",
-                        "tolbutamide",
-                        "tolazamide",
-                        "troglitazone")]
+setkey(diab_dt, encounter_id)
 ```
 
+## Modifying features
+
+*Replacing "?"-"None"-"Unknown/Invalid"-"NULL" with NAs*
 ```{r}
-# replacing "?"/"None"/"Unknown/Invalid" with NAs
 diab_dt$gender <- 
     ifelse(diab_dt$gender == "Unknown/Invalid", NA, 
            ifelse(diab_dt$gender == "Female", 1, 0))
@@ -173,82 +183,92 @@ diab_dt$admission_source <-
     ifelse(diab_dt$admission_source == "NULL", NA, diab_dt$admission_source)
 diab_dt$discharge_type <- 
     ifelse(diab_dt$discharge_type == "NULL", NA, diab_dt$discharge_type)
-
 ```
 
+*Checking number of NAs for each feature*
 ```{r}
-# number of NAs
 na_count <- data.table(variable = names(diab_dt), 
                        count  = colSums(is.na(diab_dt)))
 ```
 
+*Replacing Yes/No binaries with 1/0*
 ```{r}
-# replacing Yes/No binaries with 1/0 
 diab_dt$change <- 
-    factor(ifelse(diab_dt$change== "No", 0, 1))
+    ifelse(diab_dt$change== "No", 0, 1)
 diab_dt$diabetesMed <- 
-    factor(ifelse(diab_dt$diabetesMed== "No", 0, 1))
+    ifelse(diab_dt$diabetesMed== "No", 0, 1)
 ```
 
+
+## Adding features
+
+*Creating Unfavorable_Outcome variable - Expired/Hospice*
 ```{r}
-# creating binary_readmitted outcome variable
+diab_dt[, unfavorable_outcome := 
+          ifelse((discharge_type == "Expired" | 
+                   discharge_type == "Hospice / home" |
+                    discharge_type == "Hospice / medical facility" | 
+                     discharge_type == "Expired in a medical facility. Medicaid only, hospice." |
+                      discharge_type == "Expired - at home. Medicaid only, hospice."), 1, 0)]
+```
+
+*Creating diabetes primary diagnosis binary variable*
+```{r}
+diab_dt$primary_diag_diabetes <- 
+  ifelse(diab_dt$diag_1 == "^250", 1, 0)
+```
+
+*Creating readmitted_binary outcome variable*
+```{r}
 diab_dt <- 
-    diab_dt[, readmitted_binary := factor(ifelse(readmitted == "NO", 0, 1))]
+    diab_dt[, readmitted_binary := factor(ifelse(readmitted == "NO" |
+                                                   readmitted == ">30", 0, 1))]
 ```
 
+*Creating binary A1Cresult_measured treatment variable*
 ```{r}
-# Creating binary A1Cresult_measured treatment variable
 diab_dt$A1Cresult_measured <- 
-    factor(ifelse(diab_dt$A1Cresult == "None", 0, 1))
+    ifelse(diab_dt$A1Cresult == "None", FALSE, TRUE)
 ```
 
 
+# Causal Inference: Logistic Regression, LASSO, and Propensity Scores
 
-
+## Q1: Does measuring A1C lower readmission?
+*removing columns with large number of NAs. While it may be useful to control for weight and medical specialty, it is probably not worth reducing our sample size so dramatically. Also for this question using binaries for A1Cresult and readmitted so dropping the actual cols*
 ```{r}
-# INFERENCE Q1: Does AIC Measurement affect readmission?
-```
-
-```{r}
-# removing columns with large number of NAs. While it may be useful to control for weight and medical specialty, it is probably not worth reducing our sample size so dramatically. 
-# Also for this question using binaries for A1Cresult and readmitted so dropping the actual cols
-
 A1C_inference1_dt <- diab_dt[, -c("payer_code", 
                                   "medical_specialty", 
                                   "weight", 
-                                  "diag_1", 
-                                  "diag_2", 
-                                  "diag_3", 
+                                  "diag_1",
+                                  "diag_2",
+                                  "diag_3",
                                   "A1Cresult", 
                                   "readmitted",
                                   "discharge_type",
                                   "admission_source",
                                   "admission_type")] 
-
 ```
 
+*# Removing NAs in all other variables*
 ```{r}
-# Removing NAs in all other variables
 A1C_inference1_dt <- A1C_inference1_dt[complete.cases(A1C_inference1_dt)]
 ```
 
+*IDing cols for dummy variables. Converting character cols to factor type (needed for one_hot formula). One-hot for dummy variables (NOTE: this creates R not R-1 dummies)*
 ```{r}
-# IDing cols for dummy variables (this is necessary if we want to SMOTE-NC/KNN)
 A1C_char_columns <- A1C_inference1_dt[, c(Filter(is.character, .SD),
                                           .("encounter_id" = encounter_id))]
 
-# Converting character cols to factor type (needed for one_hot formula)
 char_vars <- sapply(A1C_char_columns, is.character)
 char_cols <- names(A1C_char_columns)[char_vars]
 A1C_char_columns[, (char_cols) := lapply(.SD, as.factor), .SDcols = char_cols]
 
-# One-hot for dummy variables (NOTE: this creates R not R-1 dummies)
 A1C_char_columns <- one_hot(A1C_char_columns)
 ```
 
+*Intuitively removing baseline categories to create R-1 dummies/set baseline vars this is important for our interpretation of model effects*
 ```{r}
-# Intuitively removing variables to create R-1 dummies/set baseline vars
-# this is important for our interpretation of model effects
 A1C_char_columns <- A1C_char_columns[, -c("race_Caucasian",
                                           "age_[0-10)",
                                           "max_glu_serum_None",
@@ -289,70 +309,55 @@ A1C_inference1_dt <- merge(A1C_inference1_dt[,-c("race",
 ```
 
 
+
+
+
+## Randomly Undersampling Outcome Variable (unfavorable_outcome = 0)
+*Assessing class imbalance with outcome variable*
 ```{r}
-# Assessing imbalance with treatment variable
-plot(A1C_inference1_dt$A1Cresult_measured, main = "Control - Treatment")
-sum(A1C_inference1_dt$A1Cresult_measured == 1)
+# plot(A1C_inference1_dt$unfavorable_outcome, main = "Outcome Classes")
+sum(A1C_inference1_dt$unfavorable_outcome==0)
+sum(A1C_inference1_dt$unfavorable_outcome==1)
 ```
 
+*Creating separate data tables for measured and unmeasured A1C*
 ```{r}
-## ADJUSTING FOR IMBALANCE BETWEEN TREATMENT/CONTROL: RANDOM UNDER SAMPLING
+A1C_favorable_dt <- A1C_inference1_dt[unfavorable_outcome==0]
+A1C_unfavorable_dt <- A1C_inference1_dt[unfavorable_outcome==1]
+```
 
-# creating separate data tables for measured and unmeasured A1C
-A1C_unmeasured_dt <- A1C_inference1_dt[A1Cresult_measured==0]
-A1C_measured_dt <- A1C_inference1_dt[A1Cresult_measured==1]
-
-# randomly under sampling majority control group
+*Randomly under sampling majority control group*
+```{r}
 set.seed(123)
-A1C_unmeasured_samp <- A1C_unmeasured_dt[sample(nrow(A1C_unmeasured_dt), nrow(A1C_measured_dt), replace = FALSE, prob = NULL), ]
+A1C_favorable_samp <- A1C_favorable_dt[sample(nrow(A1C_favorable_dt), nrow(A1C_unfavorable_dt), replace = FALSE, prob = NULL), ]
+```
 
 
-# combining treated group with randomly under sampled majortity/control
-A1C_balanced_treatment_DT <- rbindlist(list(A1C_unmeasured_samp, A1C_measured_dt),
+*Combining treated group with randomly under sampled majortity/control*
+```{r}
+A1C_Analysis_DT <- rbindlist(list(A1C_favorable_samp, A1C_unfavorable_dt),
                             use.names = TRUE)
+```
 
-sum(A1C_balanced_treatment_DT$A1Cresult_measured==0)
-sum(A1C_balanced_treatment_DT$A1Cresult_measured==1)
+*Checking classes are balanced*
+```{r}
+sum(A1C_Analysis_DT$unfavorable_outcome==0)
+sum(A1C_Analysis_DT$unfavorable_outcome==1)
+```
 
-# removing intermediate data.tables
-rm(A1C_unmeasured_dt, A1C_measured_dt, A1C_unmeasured_samp)
+*Removing intermediate tables*
+```{r}
+rm(A1C_nonreadmitted_dt, A1C_readmitted_dt, A1C_readmitted_samp, A1C_balanced_treatment_DT)
+```
+
+## Logistic Regression
+
+```{r}
+fit.1 <- glm(unfavorable_outcome ~ . - patient_nbr - encounter_id - readmitted_binary, data = A1C_inference1_dt, family = "binomial")
 ```
 
 ```{r}
-# Assessing class imbalance with outcome variable
-plot(A1C_balanced_treatment_DT$readmitted_binary, main = "Outcome Classes")
-sum(A1C_balanced_treatment_DT$readmitted_binary==0)
-sum(A1C_balanced_treatment_DT$readmitted_binary==1)
-```
-
-```{r}
-# UPSAMPLING MINORITY CLASS READMITTED = 1
-
-# creating separate data tables for measured and unmeasured A1C
-A1C_nonreadmitted_dt <- A1C_balanced_treatment_DT[readmitted_binary==0]
-A1C_readmitted_dt <- A1C_balanced_treatment_DT[readmitted_binary==1]
-
-# randomly under sampling majority control group
-set.seed(321)
-A1C_readmitted_samp <- A1C_readmitted_dt[sample(nrow(A1C_nonreadmitted_dt) - nrow(A1C_readmitted_dt), replace = FALSE, prob = NULL), ]
-
-
-# combining treated group with randomly under sampled majortity/control
-A1C_Analyis_DT <- rbindlist(list(A1C_readmitted_samp, A1C_balanced_treatment_DT),
-                            use.names = TRUE)
-
-sum(A1C_Analyis_DT$readmitted_binary==0)
-sum(A1C_Analyis_DT$readmitted_binary==1)
-
-# removing intermediate data.tables
-rm(A1C_nonreadmitted_dt, A1C_readmitted_dt, A1C_readmitted_samp)
-```
-
-
-```{r}
-
-fit.1 <- glm(unfavorable_outcome ~ . - patient_nbr - encounter_id, 
-             data = A1C_balanced_treatment_DT, family = "binomial")
+summary(fit.1)
 ```
 
 ```{r}
@@ -373,15 +378,43 @@ kable(summary_fit.1_dt, digits = 4) %>%
 rm(variables_fit.1, coefficients_fit.1)
 ```
 
+## Logistic Regression with propensity scores
 
+```{r}
+Tr <- cbind(A1C_Analysis_DT$A1Cresult_measured)
+Y <- cbind(A1C_Analysis_DT$unfavorable_outcome)
+X <- cbind(A1C_Analysis_DT[, -c("encounter_id", 
+                               "patient_nbr", 
+                               "unfavorable_outcome", 
+                               "readmitted_binary", 
+                               "A1Cresult_measured")])
+X <- as.matrix(X)
+```
 
+```{r}
+summary(Tr)
+summary(Y)
+```
 
+*Estimating Propensity Score model*
+```{r}
+glm.treat <- glm(Tr ~ X, 
+                 family = "binomial",
+                 data = A1C_Analysis_DT)
+summary(glm.treat)
+```
 
-
-
+*Calculating ATE*
+```{r}
+rr1 <- Match(Y = Y, Tr = Tr, estimand = "ATE", M=1, replace = TRUE, ties = TRUE, X = glm.treat$fitted.values, version = "fast")
+summary(rr1)
+```
+## LASSO
+## Causal LASSO
 
 ```{r}
 # Research Question 2: Is higher AIC measurement associated with unfavorable outcomes?
+```
 
 ```{r}
 diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
@@ -393,9 +426,9 @@ diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
 
 
 
-```{r}
+
 # ADDITIONAL CODE
-```
+
 
 ```{r}
 # Abbreviating expressions in discharge disposition for cleaner regression output (if var is included)
@@ -440,3 +473,38 @@ diab_dt$discharge_type <-
 print(unique(diab_dt$discharge_type))
 ```
 
+## Random Undersampling Treatment Variable (A1C_measured binary = 0) 
+*# Assessing imbalance with treatment variable*
+```{r}
+sum(A1C_inference1_dt$A1Cresult_measured == 0)
+sum(A1C_inference1_dt$A1Cresult_measured == 1)
+```
+
+*Creating separate data tables for measured and unmeasured A1C*
+```{r}
+A1C_unmeasured_dt <- A1C_inference1_dt[A1Cresult_measured==0]
+A1C_measured_dt <- A1C_inference1_dt[A1Cresult_measured==1]
+```
+
+*Randomly under sampling majority control group*
+```{r}
+set.seed(123)
+A1C_unmeasured_samp <- A1C_unmeasured_dt[sample(nrow(A1C_unmeasured_dt), nrow(A1C_measured_dt), replace = FALSE, prob = NULL), ]
+```
+
+*Combining treated group with randomly under sampled majority/control*
+```{r}
+A1C_balanced_treatment_DT <- rbindlist(list(A1C_unmeasured_samp, A1C_measured_dt),
+                            use.names = TRUE)
+```
+
+*Checking treatment and control are balanced*
+```{r}
+sum(A1C_balanced_treatment_DT$A1Cresult_measured==TRUE)
+sum(A1C_balanced_treatment_DT$A1Cresult_measured==FALSE)
+```
+
+*Removing intermediate tables*
+```{r}
+rm(A1C_unmeasured_dt, A1C_measured_dt, A1C_unmeasured_samp, A1C_char_columns, A1C_inference1_dt)
+```
