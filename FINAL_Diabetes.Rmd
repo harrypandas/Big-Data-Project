@@ -208,10 +208,10 @@ diab_dt$A1Cresult_measured <-
 admission_type_id_map <- c('1'='Emergency',
                            '2'='Emergency',
                            '3'='Elective',
-                           '4'='Newborn',
+                           '4'='Elective',
                            '5'=NA,
                            '6'=NA,
-                           '7'='Trauma Center',
+                           '7'='Emergency',
                            '8'=NA)
 
 diab_dt$admission_type_id_char <- admission_type_id_map[as.character(diab_dt$admission_type_id)]
