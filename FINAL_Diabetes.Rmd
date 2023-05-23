@@ -96,6 +96,7 @@ discharge_disposition_id_map <- c("1"="Discharge Home",
                                   "10"="Discharge Hospital Facility",
                                   "11"="Expired",
                                   "12"="Discharge Hospital Facility",
+
                                   "13"="Hospice",
                                   "14"="Hospice",
                                   "15"="Discharge Hospital Facility",
@@ -115,11 +116,13 @@ discharge_disposition_id_map <- c("1"="Discharge Home",
                                   "29"="Discharge Hospital Facility",
                                   "30"="Discharge Hospital Facility")
 
+
 diab_dt$discharge_disposition_id_char <- discharge_disposition_id_map[as.character(diab_dt$discharge_disposition_id)]
 
 discharge_disposition_id_count <- table(diab_dt$discharge_disposition_id_char)
 
 discharge_disposition_id_count <- discharge_disposition_id_count[order(discharge_disposition_id_count, decreasing=TRUE)]
+
 
 barplot(discharge_disposition_id_count, xlab="discharge_disposition_id", ylab="Count", 
      main = "Distribution of Discharge", width=0.5, space=0.5, col="lightblue")
@@ -185,7 +188,7 @@ barplot(age_count, xlab="age", ylab="Count",
 
 
 # Data Wrangling
-## Filtering data/Removing features
+### Filtering data/Removing features
 
 *Ordering by encounter ID oldest to newest. Only using first encounter for each patient - otherwise violating independence assumption of models*
 ```{r}
@@ -209,7 +212,7 @@ diab_dt <- diab_dt[, -c("acetohexamide",
                         "troglitazone")]
 ```
 
-## Joins - SKIP USE HARRISON'S MAPPING
+### Joins - SKIP USE HARRISON'S MAPPING
 *Restructuring ids lookup table as 3 separate tables*
 ```{r}
 admission_ids_lookup_dt <- ids_lookup_dt[1:8]
@@ -278,7 +281,7 @@ rm(admission_source_ids_lookup_dt, admission_ids_lookup_dt, discharge_ids_lookup
 setkey(diab_dt, encounter_id)
 ```
 
-## Modifying features
+### Modifying features
 
 *Replacing "?"-"None"-"Unknown/Invalid"-"NULL" with NAs*
 ```{r}
@@ -323,7 +326,7 @@ diab_dt$diabetesMed <-
 ```
 
 
-## Adding features
+### Adding features
 
 *Creating Unfavorable_Outcome variable - Expired/Hospice*
 ```{r}
@@ -352,7 +355,9 @@ diab_dt$A1Cresult_measured <-
 ```
 
 
+
 # Causal Inference: Logistic Regression with Propensity Scores and LASSO
+
 
 ## Q1: Is measuring A1C causally related to favorable outcome?
 *removing columns with large number of NAs. While it may be useful to control for weight and medical specialty, it is probably not worth reducing our sample size so dramatically. Also for this question using binaries for A1Cresult and readmitted so dropping the actual cols*
@@ -374,7 +379,7 @@ A1C_inference1_dt <- diab_dt[, -c("patient_nbr",
                                   "admission_type")] 
 ```
 
-*# Removing NAs in all other variables*
+*Removing NAs in all other variables*
 ```{r}
 A1C_inference1_dt <- A1C_inference1_dt[complete.cases(A1C_inference1_dt)]
 ```
@@ -434,7 +439,7 @@ A1C_inference1_dt <- merge(A1C_inference1_dt[,-c("race",
 ```
 
 
-## Additional Data Wraningling specific to inference analysis
+### Additional Data Wraningling specific to inference analysis
 
 *Randomly Undersampling Outcome Variable (unfavorable_outcome = 0)*
 *Assessing class imbalance with outcome variable*
@@ -475,7 +480,7 @@ rm(A1C_favorable_dt, A1C_unfavorable_dt, A1C_favorable_samp)
 ```
 
 
-## Logistic Regression
+### Logistic Regression
 
 ```{r}
 fit.1 <- glm(unfavorable_outcome ~ . - encounter_id - readmitted_binary, data = A1C_inference1_dt, family = "binomial")
@@ -503,7 +508,7 @@ kable(summary_fit.1_dt, digits = 4) %>%
 rm(variables_fit.1, coefficients_fit.1)
 ```
 
-## Logistic Regression with propensity scores
+### Logistic Regression with propensity scores
 
 ```{r}
 Tr <- cbind(A1C_Analysis_DT$A1Cresult_measured)
@@ -534,7 +539,7 @@ ate1 <- Match(Y = Y, Tr = Tr, estimand = "ATE", M=1, replace = TRUE, ties = TRUE
 summary(ate1)
 ```
 
-## Causal LASSO
+### Causal LASSO
 
 *Estimating Optimal Regularization Parameter*
 ```{r}
