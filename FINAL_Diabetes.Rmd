@@ -96,8 +96,9 @@ discharge_disposition_id_map <- c("1"="Discharge Home",
                                   "10"="Discharge Hospital Facility",
                                   "11"="Expired",
                                   "12"="Discharge Hospital Facility",
-                                  "13"="Discharge Home",
-                                  "14"="Discharge Hospital Facility",
+
+                                  "13"="Hospice",
+                                  "14"="Hospice",
                                   "15"="Discharge Hospital Facility",
                                   "16"="Discharge Hospital Facility",
                                   "17"="Discharge Hospital Facility",
@@ -115,11 +116,13 @@ discharge_disposition_id_map <- c("1"="Discharge Home",
                                   "29"="Discharge Hospital Facility",
                                   "30"="Discharge Hospital Facility")
 
+
 diab_dt$discharge_disposition_id_char <- discharge_disposition_id_map[as.character(diab_dt$discharge_disposition_id)]
 
 discharge_disposition_id_count <- table(diab_dt$discharge_disposition_id_char)
 
 discharge_disposition_id_count <- discharge_disposition_id_count[order(discharge_disposition_id_count, decreasing=TRUE)]
+
 
 barplot(discharge_disposition_id_count, xlab="discharge_disposition_id", ylab="Count", 
      main = "Distribution of Discharge", width=0.5, space=0.5, col="lightblue")
@@ -185,7 +188,7 @@ barplot(age_count, xlab="age", ylab="Count",
 
 
 # Data Wrangling
-## Filtering data/Removing features
+### Filtering data/Removing features
 
 *Ordering by encounter ID oldest to newest. Only using first encounter for each patient - otherwise violating independence assumption of models*
 ```{r}
@@ -209,7 +212,7 @@ diab_dt <- diab_dt[, -c("acetohexamide",
                         "troglitazone")]
 ```
 
-## Joins
+### Joins - SKIP USE HARRISON'S MAPPING
 *Restructuring ids lookup table as 3 separate tables*
 ```{r}
 admission_ids_lookup_dt <- ids_lookup_dt[1:8]
@@ -278,7 +281,7 @@ rm(admission_source_ids_lookup_dt, admission_ids_lookup_dt, discharge_ids_lookup
 setkey(diab_dt, encounter_id)
 ```
 
-## Modifying features
+### Modifying features
 
 *Replacing "?"-"None"-"Unknown/Invalid"-"NULL" with NAs*
 ```{r}
@@ -323,22 +326,19 @@ diab_dt$diabetesMed <-
 ```
 
 
-## Adding features
+### Adding features
 
 *Creating Unfavorable_Outcome variable - Expired/Hospice*
 ```{r}
 diab_dt[, unfavorable_outcome := 
-          ifelse((discharge_type == "Expired" | 
-                   discharge_type == "Hospice / home" |
-                    discharge_type == "Hospice / medical facility" | 
-                     discharge_type == "Expired in a medical facility. Medicaid only, hospice." |
-                      discharge_type == "Expired - at home. Medicaid only, hospice."), 1, 0)]
+          ifelse((discharge_disposition_id_char == "Expired" | 
+                   discharge_disposition_id_char == "Hospice"), 1, 0)]
 ```
 
 *Creating diabetes primary diagnosis binary variable*
 ```{r}
 diab_dt$primary_diag_diabetes <- 
-  ifelse(diab_dt$diag_1 == "^250", 1, 0)
+  ifelse(diab_dt$diag_1 %like% "^250", 1, 0)
 ```
 
 *Creating readmitted_binary outcome variable*
@@ -355,12 +355,16 @@ diab_dt$A1Cresult_measured <-
 ```
 
 
-# Causal Inference: Logistic Regression, LASSO, and Propensity Scores
+
+# Causal Inference: Logistic Regression with Propensity Scores and LASSO
+
 
 ## Q1: Is measuring A1C causally related to favorable outcome?
 *removing columns with large number of NAs. While it may be useful to control for weight and medical specialty, it is probably not worth reducing our sample size so dramatically. Also for this question using binaries for A1Cresult and readmitted so dropping the actual cols*
 ```{r}
-A1C_inference1_dt <- diab_dt[, -c("payer_code", 
+A1C_inference1_dt <- diab_dt[, -c("patient_nbr",
+                                  "payer_code",
+                                  "age",
                                   "medical_specialty", 
                                   "weight", 
                                   "diag_1",
@@ -369,11 +373,13 @@ A1C_inference1_dt <- diab_dt[, -c("payer_code",
                                   "A1Cresult", 
                                   "readmitted",
                                   "discharge_type",
+                                  "discharge_disposition_id_char",
+                                  "admission_source_id_char",
                                   "admission_source",
                                   "admission_type")] 
 ```
 
-*# Removing NAs in all other variables*
+*Removing NAs in all other variables*
 ```{r}
 A1C_inference1_dt <- A1C_inference1_dt[complete.cases(A1C_inference1_dt)]
 ```
@@ -393,7 +399,6 @@ A1C_char_columns <- one_hot(A1C_char_columns)
 *Intuitively removing baseline categories to create R-1 dummies/set baseline vars this is important for our interpretation of model effects*
 ```{r}
 A1C_char_columns <- A1C_char_columns[, -c("race_Caucasian",
-                                          "age_[0-10)",
                                           "max_glu_serum_None",
                                           "metformin_No",
                                           "repaglinide_No",
@@ -406,7 +411,8 @@ A1C_char_columns <- A1C_char_columns[, -c("race_Caucasian",
                                           "rosiglitazone_No",
                                           "acarbose_No",
                                           "insulin_No",
-                                          "glyburide-metformin_No")]
+                                          "glyburide-metformin_No",
+                                          "admission_type_id_char_Non-Urgent")]
 ```
 
 ```{r}
@@ -415,6 +421,7 @@ setkey(A1C_inference1_dt, encounter_id)
 
 A1C_inference1_dt <- merge(A1C_inference1_dt[,-c("race",
                                           "age",
+                                          "admission_type_id_char",
                                           "max_glu_serum",
                                           "metformin",
                                           "repaglinide",
@@ -432,10 +439,9 @@ A1C_inference1_dt <- merge(A1C_inference1_dt[,-c("race",
 ```
 
 
+### Additional Data Wraningling specific to inference analysis
 
-
-
-## Randomly Undersampling Outcome Variable (unfavorable_outcome = 0)
+*Randomly Undersampling Outcome Variable (unfavorable_outcome = 0)*
 *Assessing class imbalance with outcome variable*
 ```{r}
 # plot(A1C_inference1_dt$unfavorable_outcome, main = "Outcome Classes")
@@ -470,13 +476,14 @@ sum(A1C_Analysis_DT$unfavorable_outcome==1)
 
 *Removing intermediate tables*
 ```{r}
-rm(A1C_nonreadmitted_dt, A1C_readmitted_dt, A1C_readmitted_samp, A1C_balanced_treatment_DT)
+rm(A1C_favorable_dt, A1C_unfavorable_dt, A1C_favorable_samp)
 ```
 
-## Logistic Regression
+
+### Logistic Regression
 
 ```{r}
-fit.1 <- glm(unfavorable_outcome ~ . - patient_nbr - encounter_id - readmitted_binary, data = A1C_inference1_dt, family = "binomial")
+fit.1 <- glm(unfavorable_outcome ~ . - encounter_id - readmitted_binary, data = A1C_inference1_dt, family = "binomial")
 ```
 
 ```{r}
@@ -501,13 +508,12 @@ kable(summary_fit.1_dt, digits = 4) %>%
 rm(variables_fit.1, coefficients_fit.1)
 ```
 
-## Logistic Regression with propensity scores
+### Logistic Regression with propensity scores
 
 ```{r}
 Tr <- cbind(A1C_Analysis_DT$A1Cresult_measured)
 Y <- cbind(A1C_Analysis_DT$unfavorable_outcome)
 X <- cbind(A1C_Analysis_DT[, -c("encounter_id", 
-                               "patient_nbr", 
                                "unfavorable_outcome", 
                                "readmitted_binary", 
                                "A1Cresult_measured")])
@@ -527,13 +533,61 @@ glm.treat <- glm(Tr ~ X,
 summary(glm.treat)
 ```
 
-*Calculating ATE*
+*Calculating ATE of A1C Measurement*
 ```{r}
-rr1 <- Match(Y = Y, Tr = Tr, estimand = "ATE", M=1, replace = TRUE, ties = TRUE, X = glm.treat$fitted.values, version = "fast")
-summary(rr1)
+ate1 <- Match(Y = Y, Tr = Tr, estimand = "ATE", M=1, replace = TRUE, ties = TRUE, X = glm.treat$fitted.values, version = "fast")
+summary(ate1)
 ```
-## LASSO
-## Causal LASSO
+
+### Causal LASSO
+
+*Estimating Optimal Regularization Parameter*
+```{r}
+d = Tr
+cv.treat <- cv.gamlr(X, d)
+dhat <- predict(cv.treat$gamlr, X)
+dhat <- drop(dhat)
+plot(cv.treat)
+```
+```{r}
+1-min(cv.treat$cvm)/cv.treat$cvm[1]
+```
+
+```{r} 
+# I.S. R^2
+D <-sum((d-dhat)^2)
+D0 <- sum((d-mean(d))^2)
+1-D/D0
+```
+
+```{r}
+summary(cv.treat$gamlr)[which.min(AICc(cv.treat$gamlr)),]
+```
+
+*Casual LASSO: Y on d, dhat and x*
+```{r}
+causal <- gamlr(cbind(d,dhat, X), Y, free = 2)
+plot(causal)
+par(mar=c(5, 4, 4.6, 6) + 0.1)
+title(main = "Causal  LASSO", cex.main = 0.8)
+```
+
+
+```{r}
+coef(causal)
+```
+
+*Naive LASSO: ignoring dhat*
+```{r}
+naive <- gamlr(cbind(d,X), Y)
+plot(naive)
+par(mar=c(5, 4, 4.6, 6) + 0.1)
+title(main = "Naive  LASSO", cex.main = 0.8)
+```
+
+```{r}
+coef(naive)
+```
 
 ```{r}
 # Research Question 2: Is higher AIC measurement associated with unfavorable outcomes?
@@ -551,7 +605,6 @@ diab_dt <- diab_dt[!is.na(diab_dt$A1Cresult), ]
 
 
 # ADDITIONAL CODE
-
 
 ```{r}
 # Abbreviating expressions in discharge disposition for cleaner regression output (if var is included)
@@ -631,3 +684,36 @@ sum(A1C_balanced_treatment_DT$A1Cresult_measured==FALSE)
 ```{r}
 rm(A1C_unmeasured_dt, A1C_measured_dt, A1C_unmeasured_samp, A1C_char_columns, A1C_inference1_dt)
 ```
+
+## LASSO
+
+*LASSO ignoring A1C Measurement*
+```{r}
+lasso1<- gamlr(X, y=Y, lambda.min.ratio=1e-3)
+plot(lasso1)
+par(mar=c(5, 4, 4.6, 6) + 0.1)
+title(main = "LASSO", cex.main = 0.8)
+```
+
+```{r}
+summary(lasso1)
+```
+
+```{r}
+coef_lasso <- coef(lasso1)
+```
+
+
+```{r}
+dev <- lasso1$deviance[which.min(AICc(lasso1))] 
+dev0<- lasso1$deviance[1]
+1-dev/dev0
+```
+
+```{r}
+Betas <- drop(coef(lasso1)) 
+kable(Betas)
+```
+
+
+
