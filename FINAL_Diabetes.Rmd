@@ -357,7 +357,7 @@ diab_dt$A1Cresult_measured <-
 
 # Causal Inference: Logistic Regression, LASSO, and Propensity Scores
 
-## Q1: Does measuring A1C lower readmission?
+## Q1: Is measuring A1C causally related to favorable outcome?
 *removing columns with large number of NAs. While it may be useful to control for weight and medical specialty, it is probably not worth reducing our sample size so dramatically. Also for this question using binaries for A1Cresult and readmitted so dropping the actual cols*
 ```{r}
 A1C_inference1_dt <- diab_dt[, -c("payer_code", 
