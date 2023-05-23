@@ -307,7 +307,29 @@ barplot(admission_source_id_count, xlab="admission_source_id", ylab="Count",
      main = "Distribution of Admission Source", width=0.5, space=0.5, col="lightblue")
 ```
 
+```{r}
 
+age_map <- c("[0-10)"="5",
+             "[10-20)" = "15",
+             "[20-30)" = "25",
+             "[30-40)" = "35",
+             "[40-50)" = "45",
+             "[50-60)" = "55",
+             "[60-70)" = "65",
+             "[70-80)" = "75",
+             "[80-90)" = "85",
+             "[90-100)" = "95")
+
+diab_dt$age_mean <- age_map[as.character(diab_dt$age)]
+
+age_count <- table(diab_dt$age_mean)
+
+age_count <- age_count[order(age_count)]
+
+barplot(age_count, xlab="age", ylab="Count", 
+     main = "Distribution of Ages (Mean)", width=0.5, space=0.5, col="lightblue")
+
+```
 
 ```{r}
 # INFERENCE Q1: Does AIC Measurement affect readmission?
