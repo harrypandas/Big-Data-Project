@@ -205,13 +205,13 @@ diab_dt$A1Cresult_measured <-
 
 # Create mapping for admission_type_id categorical values
 
-admission_type_id_map <- c('1'='Emergency',
-                           '2'='Emergency',
-                           '3'='Elective',
-                           '4'='Elective',
+admission_type_id_map <- c('1'='Urgent',
+                           '2'='Urgent',
+                           '3'='Non-Urgent',
+                           '4'='Non-Urgent',
                            '5'=NA,
                            '6'=NA,
-                           '7'='Emergency',
+                           '7'='Urgent',
                            '8'=NA)
 
 diab_dt$admission_type_id_char <- admission_type_id_map[as.character(diab_dt$admission_type_id)]
@@ -322,13 +322,12 @@ age_map <- c("[0-10)"="5",
 
 diab_dt$age_mean <- age_map[as.character(diab_dt$age)]
 
-age_count <- table(diab_dt$age_mean)
+age_mean_levels <- c("5","15","25","35","45","55","65","75","85","95")
 
-age_count <- age_count[order(age_count)]
+age_count <- table(factor(diab_dt$age_mean, levels = age_mean_levels))
 
 barplot(age_count, xlab="age", ylab="Count", 
-     main = "Distribution of Ages (Mean)", width=0.5, space=0.5, col="lightblue")
-
+     main = "Distribution of Age Groups", width=0.5, space=0.5, col="lightblue")
 ```
 
 ```{r}
