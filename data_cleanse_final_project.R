@@ -3,13 +3,15 @@ setwd(r"(C:\Users\Spring 2023\BUSN41201_BigData\FINAL PROJECT)")
 
 diab_dt <- fread("diabetic_data.csv")
 
+### PRIMARY DATASET CLEAN UP ###
+
 # replacing "?"/"None"/"Unknown/Invalid" with NAs
 diab_dt <- as.data.frame(apply(diab_dt, 2, function(x) ifelse(x == "?", NA, x)))
 diab_dt <- as.data.frame(apply(diab_dt, 2, function(x) ifelse(x == "NULL", NA, x)))
 
 diab_dt$gender <- 
-  ifelse(diab_dt$gender == "Unknown/Invalid", NA, 
-         ifelse(diab_dt$gender == "Female", 1, 0))
+    ifelse(diab_dt$gender == "Unknown/Invalid", NA, 
+           ifelse(diab_dt$gender == "Female", 1, 0))
 setnames(diab_dt, "gender", "gender_female")
 
 # remove trailing and leading whitespace
@@ -67,30 +69,30 @@ diab_dt$discharge_disposition_id_char <- discharge_disposition_id_map[as.charact
 # admission_source_id mapping
 
 admission_source_id_map <- c("1"="Non-Emergency",
-                             "2"="Non-Emergency",
-                             "3"="Non-Emergency",
-                             "4"="Non-Emergency",
-                             "5"="Non-Emergency",
-                             "6"="Non-Emergency",
-                             "7"="Emergency",
-                             "8"="Non-Emergency",
-                             "9"=NA,
-                             "10"="Non-Emergency",
-                             "11"="Non-Emergency",
-                             "12"="Non-Emergency",
-                             "13"="Non-Emergency",
-                             "14"="Non-Emergency",
-                             "15"="Non-Emergency",
-                             "17"=NA,
-                             "18"=NA,
-                             "19"="Non-Emergency",
-                             "20"=NA,
-                             "21"=NA,
-                             "22"="Non-Emergency",
-                             "23"="Non-Emergency",
-                             "24"="Non-Emergency",
-                             "25"="Non-Emergency",
-                             "26"="Non-Emergency")
+                                  "2"="Non-Emergency",
+                                  "3"="Non-Emergency",
+                                  "4"="Non-Emergency",
+                                  "5"="Non-Emergency",
+                                  "6"="Non-Emergency",
+                                  "7"="Emergency",
+                                  "8"="Non-Emergency",
+                                  "9"=NA,
+                                  "10"="Non-Emergency",
+                                  "11"="Non-Emergency",
+                                  "12"="Non-Emergency",
+                                  "13"="Non-Emergency",
+                                  "14"="Non-Emergency",
+                                  "15"="Non-Emergency",
+                                  "17"=NA,
+                                  "18"=NA,
+                                  "19"="Non-Emergency",
+                                  "20"=NA,
+                                  "21"=NA,
+                                  "22"="Non-Emergency",
+                                  "23"="Non-Emergency",
+                                  "24"="Non-Emergency",
+                                  "25"="Non-Emergency",
+                                  "26"="Non-Emergency")
 
 diab_dt$admission_source_id_char <- admission_source_id_map[as.character(diab_dt$admission_source_id)]
 
@@ -128,6 +130,37 @@ diab_dt$unfavorable_outcome <- ifelse(diab_dt$discharge_disposition_id_char == "
 
 diab_dt$primary_diag_diabetes <- ifelse(diab_dt$diag_1 %like% "^250", 1, 0)
 
-diab_dt$A1Cresult_measured <- ifelse(diab_dt$A1Cresult == "None", FALSE, TRUE)
+diab_dt$A1Cresult_measured <- ifelse(diab_dt$A1Cresult == "None", 0, 1)
 
+
+ids_lookup_dt <- fread("IDs_mapping.csv")
+
+
+### CREATE DATA TABLE OF ONLY FACTORS AND NUMERIC ###
+diab_dt_num <- data.table(diab_dt)
+
+diab_dt_num <- mutate(diab_dt_num, 
+                      race = as.factor(diab_dt_num$race),
+                      gender_female = as.factor(gender_female),
+                      admission_type_id_char = as.factor(admission_type_id_char),
+                      discharge_disposition_id_char = as.factor(discharge_disposition_id_char),
+                      max_glu_serum = as.factor(max_glu_serum),
+                      metformin = as.factor(metformin),
+                      glimepiride = as.factor(glimepiride),
+                      glyburide = as.factor(glyburide),
+                      pioglitazone = as.factor(pioglitazone),
+                      rosiglitazone = as.factor(rosiglitazone),
+                      insulin = as.factor(insulin),
+                      change = as.factor(change),
+                      diabetesMed = as.factor(diabetesMed))
+
+diab_dt_hot <- one_hot(diab_dt_num, cols = 
+                         c("race", "gender_female", "admission_type_id_char","discharge_disposition_id_char",
+                           "max_glu_serum","metformin","glimepiride","glyburide","pioglitazone","rosiglitazone","insulin","diabetesMed","age_mean","change"))
+                      
+char_cols <- sapply(diab_dt_hot, is.character)
+
+diab_dt_hot <- diab_dt_hot[, !char_cols, with=FALSE]
+
+diab_dt_hot <- diab_dt_hot[complete.cases(diab_dt_hot)]
 
