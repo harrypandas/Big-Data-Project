@@ -717,3 +717,167 @@ kable(Betas)
 
 
 
+```{r}
+#ADDED BY CRAIG FOR REVIEW
+#convert to numeric and build data table
+PCdata <- data.frame(
+  Labs <- as.numeric(diab_dt$num_lab_procedures),
+  Procedures <- as.numeric(diab_dt$num_procedures),
+  Medications <- as.numeric(diab_dt$num_medications),
+  Prior_OP_Visits <- as.numeric(diab_dt$number_outpatient),
+  Prior_ED_Visits <- as.numeric(diab_dt$number_emergency),
+  Prior_IP_Visits <- as.numeric(diab_dt$number_inpatient),
+  Diagonses <- as.numeric(diab_dt$number_diagnoses)
+)
+
+colnames(PCdata) <- c("Labs", "Procedures", "Medications", "Prior_OP_Visits", "Prior_ED_Visits", "Prior_IP_Visits", "Diagonses")
+
+#build correlation matrix and heatmap
+matrix1 <- cor(PCdata)
+matrix2 <- round(matrix1, 2)
+heatmap(matrix2)
+dim(diab_dt
+    )
+
+```
+
+
+```{r}
+#print matricies
+matrix1
+matrix2
+
+```
+
+
+```{r}
+#run PC
+newPC=prcomp(PCdata, scale=TRUE)
+
+#scree plot
+plot(newPC, main = "Screeplot", xlab = "Encounter Details")
+
+```
+
+```{r}
+summary(newPC)
+```
+
+```{r}
+round(newPC$rotation[,1:4],2)
+```
+
+
+```{r}
+#Predict
+znewPC <- predict(newPC)
+
+#map of PCs
+plot(znewPC[,1:2], col=1, ylim=c(-5,10), xlim=c(-10,5), main="PC1 & PC2") 
+```
+
+```{r}
+plot(znewPC[,3:4], col=1, ylim=c(-15,15), xlim=c(-10,15), main="PC3 & PC4") 
+```
+
+```{r}
+
+library(gamlr)
+
+## predict and convert to a data frame so glm can keep track of names
+z = as.data.frame(predict(newPC))
+
+#grab y data
+y = as.numeric(diab_dt$unfavorable_outcome)
+
+#run glm
+summary(DIABglm <- glm(y ~ ., data=z))
+
+```
+
+
+```{r}
+plot(DIABglm)
+```
+```{r}
+
+## Get glm fits on 1:7 factors
+kfits <- lapply(1:7, 
+                function(K) glm(y~., data=z[,1:K,drop=FALSE]))
+
+aicc <- sapply(kfits, AICc) # apply AICc to each fit
+which.min(aicc)
+
+## try BIC
+bic <- sapply(kfits, BIC) 
+
+which.min(bic)
+
+plot(aicc) 
+
+```
+```{r}
+
+#add age and convert to numbers
+
+NUMage <- data.frame(Age = diab_dt$age)
+
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[0-10)", 10, NUMage$Age))
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[10-20)", 20, NUMage$Age))
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[20-30)", 30, NUMage$Age))
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[30-40)", 40, NUMage$Age))
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[40-50)", 50, NUMage$Age))
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[50-60)", 60, NUMage$Age))
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[60-70)", 70, NUMage$Age))
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[70-80)", 80, NUMage$Age))
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[80-90)", 90, NUMage$Age))
+NUMage <- data.frame(Age = ifelse(NUMage$Age == "[90-100)", 100, NUMage$Age))
+NUMage <- data.frame(Age = as.numeric(NUMage$Age))
+
+```
+
+
+
+```{r}
+## lasso
+lassoPCR <- cv.gamlr(x=z, y=NUMage, nfold=7)
+
+## lasso.1se agrees with IC on first 2, then grabs a couple extra
+
+coef(lassoPCR) 
+
+## plot 'em
+
+par(mfrow=c(1,2))
+
+plot(aicc, pch=21, bg="maroon", xlab="K", ylab="AICc")
+
+plot(lassoPCR) 
+```
+```{r}
+
+summary(lassoPCR)
+```
+
+
+```{r}
+## compare to an un-factorized lasso
+par(mfrow=c(1,2))
+lasso <- cv.gamlr(x=PCdata, y=NUMage, nfold=7)
+plot(lasso, main="Original Lasso")
+plot(lassoPCR, main="PCR")
+
+```
+
+
+
+```{r}
+coef(lasso)
+```
+
+```{r}
+coef(lassoPCR)
+
+```
+
+
