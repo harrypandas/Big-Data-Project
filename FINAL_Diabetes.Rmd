@@ -718,7 +718,6 @@ kable(Betas)
 
 
 ```{r}
-#ADDED BY CRAIG FOR REVIEW
 #convert to numeric and build data table
 PCdata <- data.frame(
   Labs <- as.numeric(diab_dt$num_lab_procedures),
